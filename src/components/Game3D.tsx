@@ -20,13 +20,16 @@ export function Game3D({ experiments, onSelectExperiment }: Game3DProps) {
   const animationIdRef = useRef<number | null>(null);
 
   const keysPressed = useRef<{ [key: string]: boolean }>({});
+  const isDragging = useRef(false);
+  const previousMousePosition = useRef({ x: 0, y: 0 });
+  const characterRotation = useRef(0);
 
   useEffect(() => {
     if (!mountRef.current) return;
 
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0xb8e6f5);
-    scene.fog = new THREE.Fog(0xb8e6f5, 20, 50);
+    scene.background = new THREE.Color(0x0a0a1a);
+    scene.fog = new THREE.Fog(0x0a0a1a, 20, 80);
     sceneRef.current = scene;
 
     const camera = new THREE.PerspectiveCamera(
@@ -45,54 +48,86 @@ export function Game3D({ experiments, onSelectExperiment }: Game3DProps) {
     mountRef.current.appendChild(renderer.domElement);
     rendererRef.current = renderer;
 
-    const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+    const ambientLight = new THREE.AmbientLight(0x404040, 0.3);
     scene.add(ambientLight);
 
-    const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
-    directionalLight.position.set(10, 20, 10);
-    directionalLight.castShadow = true;
-    directionalLight.shadow.mapSize.width = 2048;
-    directionalLight.shadow.mapSize.height = 2048;
-    scene.add(directionalLight);
+    for(let i = 0; i < 8; i++) {
+      const light = new THREE.PointLight(0xffffff, 1.5, 30);
+      light.position.set(
+        (i % 4) * 10 - 15,
+        12,
+        Math.floor(i / 4) * 20 - 10
+      );
+      light.castShadow = true;
+      light.shadow.mapSize.width = 1024;
+      light.shadow.mapSize.height = 1024;
+      scene.add(light);
 
-    const floorGeometry = new THREE.PlaneGeometry(50, 50);
+      const panelGeom = new THREE.BoxGeometry(1.5, 0.1, 1.5);
+      const panelMat = new THREE.MeshStandardMaterial({
+        color: 0xffff99,
+        emissive: 0xffff99,
+        emissiveIntensity: 1.5
+      });
+      const panel = new THREE.Mesh(panelGeom, panelMat);
+      panel.position.copy(light.position);
+      scene.add(panel);
+    }
+
+    const floorGeometry = new THREE.PlaneGeometry(60, 60);
     const floorMaterial = new THREE.MeshStandardMaterial({
-      color: 0xc4e6c4,
+      color: 0x1a1a2e,
       roughness: 0.7,
-      metalness: 0.1
+      metalness: 0.3
     });
     const floor = new THREE.Mesh(floorGeometry, floorMaterial);
     floor.rotation.x = -Math.PI / 2;
     floor.receiveShadow = true;
     scene.add(floor);
 
+    for(let x = -30; x <= 30; x += 3) {
+      for(let z = -30; z <= 30; z += 3) {
+        const tile = new THREE.Mesh(
+          new THREE.PlaneGeometry(2.8, 2.8),
+          new THREE.MeshStandardMaterial({
+            color: (x + z) % 6 === 0 ? 0x2a2a3e : 0x1f1f2e,
+            roughness: 0.9
+          })
+        );
+        tile.rotation.x = -Math.PI / 2;
+        tile.position.set(x, 0.01, z);
+        tile.receiveShadow = true;
+        scene.add(tile);
+      }
+    }
+
     const wallMaterial = new THREE.MeshStandardMaterial({
-      color: 0xfff8dc,
-      roughness: 0.9
+      color: 0x2a2a3e,
+      roughness: 0.8
     });
 
     const backWall = new THREE.Mesh(
-      new THREE.PlaneGeometry(50, 15),
+      new THREE.PlaneGeometry(60, 15),
       wallMaterial
     );
-    backWall.position.set(0, 7.5, -25);
+    backWall.position.set(0, 7.5, -30);
     backWall.receiveShadow = true;
     scene.add(backWall);
 
     const leftWall = new THREE.Mesh(
-      new THREE.PlaneGeometry(50, 15),
+      new THREE.PlaneGeometry(60, 15),
       wallMaterial
     );
-    leftWall.position.set(-25, 7.5, 0);
+    leftWall.position.set(-30, 7.5, 0);
     leftWall.rotation.y = Math.PI / 2;
     leftWall.receiveShadow = true;
     scene.add(leftWall);
 
     const rightWall = new THREE.Mesh(
-      new THREE.PlaneGeometry(50, 15),
+      new THREE.PlaneGeometry(60, 15),
       wallMaterial
     );
-    rightWall.position.set(25, 7.5, 0);
+    rightWall.position.set(30, 7.5, 0);
     rightWall.rotation.y = -Math.PI / 2;
     rightWall.receiveShadow = true;
     scene.add(rightWall);
@@ -100,7 +135,7 @@ export function Game3D({ experiments, onSelectExperiment }: Game3DProps) {
     const { character, parts } = createStudentCharacter();
     character.position.set(0, 0, 10);
     scene.add(character);
-    characterRef.current = parts.body as any;
+    characterRef.current = character;
 
     const table = new THREE.Group();
     const tableTopGeometry = new THREE.BoxGeometry(8, 0.2, 4);
@@ -160,6 +195,26 @@ export function Game3D({ experiments, onSelectExperiment }: Game3DProps) {
     flask.castShadow = true;
     scene.add(flask);
 
+    const handleMouseDown = (e: MouseEvent) => {
+      if (e.target === renderer.domElement) {
+        isDragging.current = true;
+        previousMousePosition.current = { x: e.clientX, y: e.clientY };
+      }
+    };
+
+    const handleMouseMove = (e: MouseEvent) => {
+      if (isDragging.current && character) {
+        const deltaX = e.clientX - previousMousePosition.current.x;
+        characterRotation.current += deltaX * 0.01;
+        character.rotation.y = characterRotation.current;
+        previousMousePosition.current = { x: e.clientX, y: e.clientY };
+      }
+    };
+
+    const handleMouseUp = () => {
+      isDragging.current = false;
+    };
+
     const handleKeyDown = (e: KeyboardEvent) => {
       keysPressed.current[e.key.toLowerCase()] = true;
 
@@ -189,26 +244,44 @@ export function Game3D({ experiments, onSelectExperiment }: Game3DProps) {
       keysPressed.current[e.key.toLowerCase()] = false;
     };
 
+    window.addEventListener('mousedown', handleMouseDown);
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
     window.addEventListener('keydown', handleKeyDown);
     window.addEventListener('keyup', handleKeyUp);
 
     const moveSpeed = 0.15;
     const animate = () => {
+      const forward = new THREE.Vector3(
+        Math.sin(characterRotation.current),
+        0,
+        Math.cos(characterRotation.current)
+      );
+      const right = new THREE.Vector3(
+        Math.cos(characterRotation.current),
+        0,
+        -Math.sin(characterRotation.current)
+      );
+
       if (keysPressed.current['w']) {
-        character.position.z -= moveSpeed;
+        character.position.x -= forward.x * moveSpeed;
+        character.position.z -= forward.z * moveSpeed;
       }
       if (keysPressed.current['s']) {
-        character.position.z += moveSpeed;
+        character.position.x += forward.x * moveSpeed;
+        character.position.z += forward.z * moveSpeed;
       }
       if (keysPressed.current['a']) {
-        character.position.x -= moveSpeed;
+        character.position.x -= right.x * moveSpeed;
+        character.position.z -= right.z * moveSpeed;
       }
       if (keysPressed.current['d']) {
-        character.position.x += moveSpeed;
+        character.position.x += right.x * moveSpeed;
+        character.position.z += right.z * moveSpeed;
       }
 
-      character.position.x = Math.max(-20, Math.min(20, character.position.x));
-      character.position.z = Math.max(-20, Math.min(20, character.position.z));
+      character.position.x = Math.max(-25, Math.min(25, character.position.x));
+      character.position.z = Math.max(-25, Math.min(25, character.position.z));
 
       camera.position.x = character.position.x;
       camera.position.z = character.position.z + 15;
@@ -230,6 +303,9 @@ export function Game3D({ experiments, onSelectExperiment }: Game3DProps) {
     setTimeout(() => setShowInstructions(false), 5000);
 
     return () => {
+      window.removeEventListener('mousedown', handleMouseDown);
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
       window.removeEventListener('resize', handleResize);
@@ -252,6 +328,7 @@ export function Game3D({ experiments, onSelectExperiment }: Game3DProps) {
           <h2 className="text-3xl font-bold mb-4 text-center bg-gradient-to-r from-cyan-400 to-blue-400 bg-clip-text text-transparent">Welcome to the Science Lab!</h2>
           <div className="space-y-3 text-base">
             <p className="flex items-center gap-3"><span className="font-bold text-green-400 text-xl bg-green-900 px-3 py-1 rounded">W A S D</span> Move Character</p>
+            <p className="flex items-center gap-3"><span className="font-bold text-purple-400 text-xl bg-purple-900 px-3 py-1 rounded">DRAG</span> Rotate Character</p>
             <p className="flex items-center gap-3"><span className="font-bold text-blue-400 text-xl bg-blue-900 px-3 py-1 rounded">Q / R</span> Switch Experiments</p>
             <p className="flex items-center gap-3"><span className="font-bold text-yellow-400 text-xl bg-yellow-900 px-3 py-1 rounded">E</span> Start Experiment (near table)</p>
           </div>
